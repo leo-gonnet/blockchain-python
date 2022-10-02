@@ -1,0 +1,17 @@
+Créer une blockchain en python qui fonctionnera en local
+Utilisation de tout les processus fondamentaux d'une blockcain type bitcoin https://bitcoin.org/bitcoin.pdf
+
+chaque pair/noeud doit lui meme etre une classe pour futures simus
+
+
+Pair process:  #on travaille avec des full nodes
+
+INI
+1) avoir une ip d'un pair connecte au reseau    #ne previent pas d'une attaque mitm
+2) demande les addr du reseau
+3) demande la chaine
+4) verifie la chaine
+
+TOU
+1) minage : succes -> partage à qui ?
+2) ecoute : si plus long replace
