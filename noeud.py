@@ -4,6 +4,7 @@ import sys
 from time import time
 from random import random
 from hashlib import sha256
+import logging
 import json
 
 
@@ -11,27 +12,41 @@ class Noeud():
     def __init__(self, ADDR, PORT_SERVEUR, ADDR_INI, PORT_INI ):
         self.actif = True
 
+        self.fil_ecoute = threading.Thread(target=self.ecouter) # , args=(self,))
+        self.fil_minage = threading.Thread(target=self.miner)
+        
         self.ADDR = ADDR #adresse du noeud
         self.PORT1 = PORT_SERVEUR #eventuellement fixe par lutilisateur, sinon auto
         self.PORT2 = None #auto
+
+        #CONFIGURATION DU LOGGER
+        self.logger = logging.getLogger(__name__)
+        class AppFilter(logging.Filter):
+            def filter(selff, record):
+                record.addr = f'{self.ADDR}:{self.PORT1}'
+                return True
+        self.logger.addFilter(AppFilter())
+        syslog = logging.StreamHandler()
+        formater = logging.Formatter('[%(asctime)s] [%(levelname)s] [%(addr)s] %(message)s')
+        syslog.setFormatter(formater)
+        self.logger.setLevel(logging.INFO)
+        self.logger.addHandler(syslog)
+        #self.logger = logging.LoggerAdapter(self.logger, {'addr': f'{self.ADDR}:{self.PORT1}'})
+
         self.sock1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket serveur
         self.sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket client
         try:
             self.sock1.bind((self.ADDR, self.PORT1)) #association de ladresse et du socket. pour port=0, attribution automatique, on le recupere avec sock.getsockname()[1]
             self.sock2.bind((self.ADDR, 0))
-            print('Sockets configure')
             self.PORT1 = self.sock1.getsockname()[1]
             self.PORT2 = self.sock2.getsockname()[1]
+            self.logger.info('Sockets configure')
         except:
-            print("Impossible de configurer les adresses/ports des sockets")
+            self.logger.error("Impossible de configurer les adresses/ports des sockets")
             sys.exit(0)
         
-
         self.noeuds = set()
         self.chaine = []
-
-
-
 
         if PORT_INI: #si non 1er (cad si port!=0)
             noeuds = self.recuperer_noeuds(ADDR_INI, PORT_INI)
@@ -40,9 +55,7 @@ class Noeud():
             if self.test_chaine(chaine):
                 self.chaine = chaine
             else:
-                print("Chaine recuperee non valide")
-
-            # vraiment besoin de 2 sockets pour ca ? https://docs.python.org/3/library/socket.html#example
+                self.logger.error("Chaine recuperee non valide")
 
         else: #si prems creation de la bc
             self.chaine.append(
@@ -55,14 +68,13 @@ class Noeud():
                 }
             )
 
-        fil_ecoute = threading.Thread(target=self.ecouter, args=(self,))
-        fil_minage = threading.Thread(target=self.miner, args=(self,))
 
-        fil_ecoute.start()
-        fil_minage.start()
 
-        fil_ecoute.join()
-        fil_minage.join()
+        self.fil_ecoute.start()
+        self.fil_minage.start()
+
+        self.logger.info("En cours dexecution")
+
         
         
 
@@ -73,17 +85,20 @@ class Noeud():
         self.sock2.connect((addr, port))
         self.sock2.send("noeuds".encode())
         data = self.sock2.recv(1024) #attention a la data qui depasse en cas de gros reseau
+        self.sock2.close()
         return data.decode()
 
     def recuperer_chaine(self, addr, port):
         self.sock2.connect((addr, port))
         self.sock2.send("chaine".encode())
         data = self.sock2.recv(1024) #attention a la data qui depasse en cas de grosse chaine
+        self.sock2.close()
+        return
 
 
     def traiter_co(self, conn, addr):
         with conn:
-            print('Demande de connexion de : ', addr)
+            self.logger.info(f'Demande de connexion de : {self.ADDR}:{self.PORT1}')
             data = conn.recv(1024)
             code = data.decode()
             match code:
@@ -99,13 +114,14 @@ class Noeud():
         self.sock1.listen()
         while self.actif:
             conn, addr = self.sock1.accept() # bloquant # the server does not sendall()/recv() on the socket it is listening on but on the new socket returned by accept().
-            fil = threading.Thread(target=self.traiter_co, args=(self, conn, addr))
+            fil = threading.Thread(target=self.traiter_co, args=(conn, addr))
             fil.start()
             fils.append(fils)
         for fil in fils:
             fil.join()
 
-    def hash(block):
+    @staticmethod
+    def hacher(block):
         # We must make sure that the Dictionary is Ordered, or we'll have inconsistent hashes
         block_string = json.dumps(block, sort_keys=True).encode()
         return sha256(block_string).hexdigest()
@@ -114,9 +130,9 @@ class Noeud():
         bloc = {
             'index': len(self.chaine) + 1,
             'timestamp': time(),
-            'transactions': "ouais",
+            'transactions': [],
             'proof': nonce,
-            'previous_hash': self.hash(self.chain[-1]),
+            'previous_hash': self.hacher(self.chaine[-1]),
         }
         return bloc
 
@@ -127,7 +143,7 @@ class Noeud():
     def miner(self):
         while self.actif:
             nv_bloc = self.nouveau_bloc(random())
-            if hash(nv_bloc)[:3] == "000":
+            if self.hacher(nv_bloc)[:3] == "000":
                 self.chaine.append(nv_bloc)
                 #prevenir les autres
 
