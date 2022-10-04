@@ -27,11 +27,10 @@ class Noeud():
                 return True
         self.logger.addFilter(AppFilter())
         syslog = logging.StreamHandler()
-        formater = logging.Formatter('[%(asctime)s] [%(levelname)s] [%(addr)s] %(message)s')
-        syslog.setFormatter(formater)
+        formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] [%(addr)s] %(message)s', "%H:%M:%S")
+        syslog.setFormatter(formatter)
         self.logger.setLevel(logging.INFO)
         self.logger.addHandler(syslog)
-        #self.logger = logging.LoggerAdapter(self.logger, {'addr': f'{self.ADDR}:{self.PORT1}'})
 
         self.sock1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket serveur
         self.sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket client
@@ -75,11 +74,6 @@ class Noeud():
 
         self.logger.info("En cours dexecution")
 
-        
-        
-
-
-            
 
     def recuperer_noeuds(self, addr, port):
         self.sock2.connect((addr, port))
@@ -98,14 +92,16 @@ class Noeud():
 
     def traiter_co(self, conn, addr):
         with conn:
-            self.logger.info(f'Demande de connexion de : {self.ADDR}:{self.PORT1}')
+            self.logger.info(f'Traitement de la demande de connexion de : {self.ADDR}:{self.PORT1}')
             data = conn.recv(1024)
             code = data.decode()
             match code:
                 case "chaine":
-                    conn.sendall(self.chaine.encode())
+                    data = json.dumps(self.chaine).encode()
+                    conn.sendall(data)
                 case "noeuds":
-                    conn.sendall(self.noeuds.encode())
+                    data = json.dumps(list(self.noeuds)).encode()
+                    conn.sendall(data)
                 case "nouveau-bloc":
                     ...
 
