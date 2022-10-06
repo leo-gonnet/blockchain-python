@@ -79,14 +79,14 @@ class Noeud():
         self.sock2.connect((addr, port))
         self.sock2.send("noeuds".encode())
         data = self.sock2.recv(1024) #attention a la data qui depasse en cas de gros reseau
-        self.sock2.close()
+        #self.sock2.close()
         return data.decode()
 
     def recuperer_chaine(self, addr, port):
         self.sock2.connect((addr, port))
         self.sock2.send("chaine".encode())
         data = self.sock2.recv(1024) #attention a la data qui depasse en cas de grosse chaine
-        self.sock2.close()
+        #self.sock2.close()
         return
 
 
@@ -144,8 +144,7 @@ class Noeud():
                 #prevenir les autres
 
 
-        
-
+    
 
 
 if __name__ == "__main__":
