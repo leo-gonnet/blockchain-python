@@ -7,16 +7,18 @@ from hashlib import sha256
 import logging
 import json
 
+import connexion
+
 
 class Noeud():
-    def __init__(self, ADDR, PORT_SERVEUR, ADDR_INI, PORT_INI ):
+    def __init__(self, ADDR_NOEUD, PORT_NOEUD, ADDR_INI, PORT_INI ):
         self.actif = True
 
         self.fil_ecoute = threading.Thread(target=self.ecouter) # , args=(self,))
         self.fil_minage = threading.Thread(target=self.miner)
         
-        self.ADDR = ADDR #adresse du noeud
-        self.PORT1 = PORT_SERVEUR #eventuellement fixe par lutilisateur, sinon auto
+        self.ADDR = ADDR_NOEUD #adresse du noeud
+        self.PORT1 = PORT_NOEUD #eventuellement fixe par lutilisateur, sinon auto
         self.PORT2 = None #auto
 
         #CONFIGURATION DU LOGGER
@@ -74,6 +76,8 @@ class Noeud():
 
         self.logger.info("En cours dexecution")
 
+    def connexion(self, ADDR_DIST, PORT_DIST, MESSAGE):
+        ...
 
     def recuperer_noeuds(self, addr, port):
         self.sock2.connect((addr, port))
