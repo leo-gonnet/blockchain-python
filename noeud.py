@@ -12,12 +12,14 @@ class Noeud():
     def __init__(self, ADDR_NOEUD, PORT_NOEUD, ADDR_INI=None, PORT_INI=None ):
         self.actif = True
 
+        self.noeuds = set()
+        self.chaine = []
+
         self.fil_ecoute = threading.Thread(target=self.ecouter) # , args=(self,))
         self.fil_minage = threading.Thread(target=self.miner)
         
         self.ADDR = ADDR_NOEUD #adresse du noeud
         self.PORT_SERVEUR = PORT_NOEUD #eventuellement fixe par lutilisateur, sinon auto
-        self.PORT2 = None #auto
 
         #CONFIGURATION DU LOGGER
         self.logger = logging.getLogger(__name__)
@@ -41,13 +43,16 @@ class Noeud():
             self.logger.error(f"Impossible de configurer ladresses/port du socket serveur : {msg}")
             sys.exit(0)
         
-        self.noeuds = set()
-        self.chaine = []
+
 
         if PORT_INI: #si non 1er (cad si port!=0)
-            ok = self.message(ADDR_INI, PORT_INI, "nouveau")
+            self.noeuds.add((ADDR_INI, PORT_INI)) #on ajoute notre pair dinitialisation 
             noeuds = self.message(ADDR_INI, PORT_INI, "noeuds")
             self.noeuds.update(noeuds)
+            print(self.noeuds)
+            for pair in self.noeuds:
+                self.message(pair[0], pair[1], "nouveau")
+            
             chaine = self.message(ADDR_INI, PORT_INI, "chaine")
             if self.test_chaine(chaine):
                 self.chaine = chaine
@@ -84,14 +89,16 @@ class Noeud():
 
     def traiter_co(self, conn, addr):
         with conn:
-            self.logger.info(f'Traitement de la demande de connexion de : {addr[0]}:{addr[1]}')
             data = conn.recv(1024)
             code = data.decode()
+            self.logger.info(f'Demande de connexion : {addr[0]}:{addr[1]}. Code : {code}')
             match code:
                 case "chaine":
                     data = json.dumps(self.chaine).encode()
                     conn.sendall(data)
                 case "noeuds":
+                    self.noeuds.append(("127.0.0.1", 45000))
+                    print(list(self.noeuds))
                     data = json.dumps(list(self.noeuds)).encode()
                     conn.sendall(data)
                 case "nouveau":
@@ -101,7 +108,7 @@ class Noeud():
                 case "nouveau-bloc":
                     ...
 
-    def ecouter(self): 
+    def ecouter(self):
         fils = []
         self.sock_serveur.listen()
         while self.actif:
@@ -136,18 +143,19 @@ class Noeud():
     def miner(self):
         while self.actif:
             nv_bloc = self.nouveau_bloc(random())
-            if self.hacher(nv_bloc)[:3] == "0000":
+            if self.hacher(nv_bloc)[:4] == "0000":
                 self.logger.info("Nouveau bloc")
                 self.chaine.append(nv_bloc)
+                print(self.noeuds)
                 for pair in self.noeuds:
-                    self.message(nv_bloc)
+                    self.message(pair[0], pair[1], nv_bloc)
 
 
     
 
 
 if __name__ == "__main__":
-    noeud_1 = Noeud("127.0.0.1", 0, "127.0.0.1", 0)
+    noeud_1 = Noeud("127.0.0.1", 65100)
     noeud_2 = Noeud("127.0.0.1", 0, noeud_1.ADDR, noeud_1.PORT_SERVEUR)
 
     
