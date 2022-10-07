@@ -9,21 +9,21 @@ import json
 
 
 class Noeud():
-    def __init__(self, ADDR_NOEUD, PORT_NOEUD, ADDR_INI, PORT_INI ):
+    def __init__(self, ADDR_NOEUD, PORT_NOEUD, ADDR_INI=None, PORT_INI=None ):
         self.actif = True
 
         self.fil_ecoute = threading.Thread(target=self.ecouter) # , args=(self,))
         self.fil_minage = threading.Thread(target=self.miner)
         
         self.ADDR = ADDR_NOEUD #adresse du noeud
-        self.PORT1 = PORT_NOEUD #eventuellement fixe par lutilisateur, sinon auto
+        self.PORT_SERVEUR = PORT_NOEUD #eventuellement fixe par lutilisateur, sinon auto
         self.PORT2 = None #auto
 
         #CONFIGURATION DU LOGGER
         self.logger = logging.getLogger(__name__)
         class AppFilter(logging.Filter):
             def filter(selff, record):
-                record.addr = f'{self.ADDR}:{self.PORT1}'
+                record.addr = f'{self.ADDR}:{self.PORT_SERVEUR}'
                 return True
         self.logger.addFilter(AppFilter())
         syslog = logging.StreamHandler()
@@ -32,22 +32,23 @@ class Noeud():
         self.logger.setLevel(logging.INFO)
         self.logger.addHandler(syslog)
 
-        self.sock1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket serveur
+        self.sock_serveur = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket serveur
         try:
-            self.sock1.bind((self.ADDR, self.PORT1)) #association de ladresse et du socket. pour port=0, attribution automatique, on le recupere avec sock.getsockname()[1]
-            self.PORT1 = self.sock1.getsockname()[1]
+            self.sock_serveur.bind((self.ADDR, self.PORT_SERVEUR)) #association de ladresse et du socket. pour port=0, attribution automatique, on le recupere avec sock.getsockname()[1]
+            self.PORT_SERVEUR = self.sock_serveur.getsockname()[1]
             self.logger.info('Socket serveur configure')
-        except:
-            self.logger.error("Impossible de configurer ladresses/port du socket serveur")
+        except socket.error as msg:
+            self.logger.error(f"Impossible de configurer ladresses/port du socket serveur : {msg}")
             sys.exit(0)
         
         self.noeuds = set()
         self.chaine = []
 
         if PORT_INI: #si non 1er (cad si port!=0)
-            noeuds = self.recuperer_noeuds(ADDR_INI, PORT_INI)
+            ok = self.message(ADDR_INI, PORT_INI, "nouveau")
+            noeuds = self.message(ADDR_INI, PORT_INI, "noeuds")
             self.noeuds.update(noeuds)
-            chaine = self.recuperer_chaine(ADDR_INI, PORT_INI)
+            chaine = self.message(ADDR_INI, PORT_INI, "chaine")
             if self.test_chaine(chaine):
                 self.chaine = chaine
             else:
@@ -71,30 +72,19 @@ class Noeud():
 
         self.logger.info("En cours dexecution")
 
-    def connexion(self, ADDR_DIST, PORT_DIST, MESSAGE): #co du client a un serveur
-        self.sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket client
-        self.sock2.bind((self.ADDR, 0))
-        self.PORT2 = self.sock2.getsockname()[1]
-
-
-    def recuperer_noeuds(self, addr, port):
-        self.sock2.connect((addr, port))
-        self.sock2.send("noeuds".encode())
-        data = self.sock2.recv(1024) #attention a la data qui depasse en cas de gros reseau
-        #self.sock2.close()
+    def message(self, ADDR_DIST, PORT_DIST, MESSAGE): #co du client a un serveur
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket client
+        sock.bind((self.ADDR, 0)) #attribution du port automatique
+        sock.connect((ADDR_DIST, PORT_DIST))
+        data = MESSAGE.encode()
+        sock.send(data)
+        data = sock.recv(1024) #attention a la data qui depasse
+        sock.close()
         return data.decode()
-
-    def recuperer_chaine(self, addr, port):
-        self.sock2.connect((addr, port))
-        self.sock2.send("chaine".encode())
-        data = self.sock2.recv(1024) #attention a la data qui depasse en cas de grosse chaine
-        #self.sock2.close()
-        return
-
 
     def traiter_co(self, conn, addr):
         with conn:
-            self.logger.info(f'Traitement de la demande de connexion de : {self.ADDR}:{self.PORT1}')
+            self.logger.info(f'Traitement de la demande de connexion de : {addr[0]}:{addr[1]}')
             data = conn.recv(1024)
             code = data.decode()
             match code:
@@ -104,14 +94,18 @@ class Noeud():
                 case "noeuds":
                     data = json.dumps(list(self.noeuds)).encode()
                     conn.sendall(data)
+                case "nouveau":
+                    self.noeuds.add(addr)
+                    data = json.dumps("ok").encode()
+                    conn.sendall(data)
                 case "nouveau-bloc":
                     ...
 
     def ecouter(self): 
         fils = []
-        self.sock1.listen()
+        self.sock_serveur.listen()
         while self.actif:
-            conn, addr = self.sock1.accept() # bloquant # the server does not sendall()/recv() on the socket it is listening on but on the new socket returned by accept().
+            conn, addr = self.sock_serveur.accept() # bloquant # the server does not sendall()/recv() on the socket it is listening on but on the new socket returned by accept().
             fil = threading.Thread(target=self.traiter_co, args=(conn, addr))
             fil.start()
             fils.append(fils)
@@ -134,6 +128,7 @@ class Noeud():
         }
         return bloc
 
+    @staticmethod
     def test_chaine(chaine):
         ...
         return 1
@@ -141,9 +136,11 @@ class Noeud():
     def miner(self):
         while self.actif:
             nv_bloc = self.nouveau_bloc(random())
-            if self.hacher(nv_bloc)[:3] == "000":
+            if self.hacher(nv_bloc)[:3] == "0000":
+                self.logger.info("Nouveau bloc")
                 self.chaine.append(nv_bloc)
-                #prevenir les autres
+                for pair in self.noeuds:
+                    self.message(nv_bloc)
 
 
     
@@ -151,7 +148,7 @@ class Noeud():
 
 if __name__ == "__main__":
     noeud_1 = Noeud("127.0.0.1", 0, "127.0.0.1", 0)
-    noeud_2 = Noeud("127.0.0.1", 0, noeud_1.ADDR, noeud_1.PORT1)
+    noeud_2 = Noeud("127.0.0.1", 0, noeud_1.ADDR, noeud_1.PORT_SERVEUR)
 
     
             
