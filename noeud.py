@@ -7,8 +7,6 @@ from hashlib import sha256
 import logging
 import json
 
-import connexion
-
 
 class Noeud():
     def __init__(self, ADDR_NOEUD, PORT_NOEUD, ADDR_INI, PORT_INI ):
@@ -35,15 +33,12 @@ class Noeud():
         self.logger.addHandler(syslog)
 
         self.sock1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket serveur
-        self.sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket client
         try:
             self.sock1.bind((self.ADDR, self.PORT1)) #association de ladresse et du socket. pour port=0, attribution automatique, on le recupere avec sock.getsockname()[1]
-            self.sock2.bind((self.ADDR, 0))
             self.PORT1 = self.sock1.getsockname()[1]
-            self.PORT2 = self.sock2.getsockname()[1]
-            self.logger.info('Sockets configure')
+            self.logger.info('Socket serveur configure')
         except:
-            self.logger.error("Impossible de configurer les adresses/ports des sockets")
+            self.logger.error("Impossible de configurer ladresses/port du socket serveur")
             sys.exit(0)
         
         self.noeuds = set()
@@ -76,8 +71,11 @@ class Noeud():
 
         self.logger.info("En cours dexecution")
 
-    def connexion(self, ADDR_DIST, PORT_DIST, MESSAGE):
-        ...
+    def connexion(self, ADDR_DIST, PORT_DIST, MESSAGE): #co du client a un serveur
+        self.sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket client
+        self.sock2.bind((self.ADDR, 0))
+        self.PORT2 = self.sock2.getsockname()[1]
+
 
     def recuperer_noeuds(self, addr, port):
         self.sock2.connect((addr, port))
