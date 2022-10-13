@@ -46,16 +46,30 @@ class Noeud():
 
 
         if PORT_INI: #si non 1er (cad si port!=0)
-            self.noeuds.add((ADDR_INI, PORT_INI)) #on ajoute notre pair dinitialisation 
+            self.logger.info("Connexion au reseau")
+
+            #recuperer les addr des noeuds du reseau
             noeuds = self.message(ADDR_INI, PORT_INI, "noeuds")
-            self.noeuds.update(noeuds)
-            print(self.noeuds)
+            if noeuds != "":
+                self.logger.info(f"MESSAGE NOEUDS REP : {eval(noeuds)}     TYPE : {type(eval(noeuds))}")
+                for n in eval(noeuds):
+                    self.noeuds.add((n[0],n[1]))
+
+            #notifier les noeuds que je suis nouveau et qu ils doivent m enregistrer
+            self.noeuds.add((ADDR_INI, PORT_INI)) #on ajoute notre pair dinitialisation 
             for pair in self.noeuds:
                 self.message(pair[0], pair[1], "nouveau")
+                ...#traiter les erreurs types echec de co
             
-            chaine = self.message(ADDR_INI, PORT_INI, "chaine")
+            #recuperer la chaine en cours
+            reponse = self.message(ADDR_INI, PORT_INI, "chaine")
+            chaine = eval(reponse)
+            self.logger.info(f"\nMESSAGE CHAINE REP : {chaine}     TYPE : {type(chaine)}\n")
             if self.test_chaine(chaine):
                 self.chaine = chaine
+                print("\n\n")
+                print(f"CHAINE ACTULLE : {self.chaine}, TYPE : {type(self.chaine)}")
+                print("\n\n")
             else:
                 self.logger.error("Chaine recuperee non valide")
 
@@ -69,6 +83,7 @@ class Noeud():
                 'previous_hash': 0,
                 }
             )
+            self.logger.info("Premier noeud : blockchain initialisee")
 
 
 
@@ -82,8 +97,9 @@ class Noeud():
         sock.bind((self.ADDR, 0)) #attribution du port automatique
         sock.connect((ADDR_DIST, PORT_DIST))
         data = MESSAGE.encode()
-        sock.send(data)
-        data = sock.recv(1024) #attention a la data qui depasse
+        sock.sendall(data)
+        data = sock.recv(1024)
+        ... #changer pour la data qui depasse
         sock.close()
         return data.decode()
 
@@ -97,8 +113,6 @@ class Noeud():
                     data = json.dumps(self.chaine).encode()
                     conn.sendall(data)
                 case "noeuds":
-                    self.noeuds.append(("127.0.0.1", 45000))
-                    print(list(self.noeuds))
                     data = json.dumps(list(self.noeuds)).encode()
                     conn.sendall(data)
                 case "nouveau":
@@ -143,20 +157,18 @@ class Noeud():
     def miner(self):
         while self.actif:
             nv_bloc = self.nouveau_bloc(random())
-            if self.hacher(nv_bloc)[:4] == "0000":
+            if self.hacher(nv_bloc)[:5] == "00000":
                 self.logger.info("Nouveau bloc")
                 self.chaine.append(nv_bloc)
-                print(self.noeuds)
                 for pair in self.noeuds:
-                    self.message(pair[0], pair[1], nv_bloc)
+                    self.message(pair[0], pair[1], str(nv_bloc))
 
 
     
 
 
 if __name__ == "__main__":
-    noeud_1 = Noeud("127.0.0.1", 65100)
-    noeud_2 = Noeud("127.0.0.1", 0, noeud_1.ADDR, noeud_1.PORT_SERVEUR)
+    noeud = Noeud("127.0.0.1", 0, "127.0.0.1", 63444)
 
     
             
