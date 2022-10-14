@@ -9,23 +9,24 @@ import json
 
 
 class Noeud():
-    def __init__(self, ADDR_NOEUD, PORT_NOEUD, ADDR_INI=None, PORT_INI=None ):
+    def __init__(self, IP_NOEUD, PORT_NOEUD, IP_INI=None, PORT_INI=None ):
         self.actif = True
 
         self.noeuds = set()
         self.chaine = []
+        self.difficulte = 5
 
         self.fil_ecoute = threading.Thread(target=self.ecouter) # , args=(self,))
         self.fil_minage = threading.Thread(target=self.miner)
         
-        self.ADDR = ADDR_NOEUD #adresse du noeud
+        self.IP = IP_NOEUD #adresse du noeud
         self.PORT_SERVEUR = PORT_NOEUD #eventuellement fixe par lutilisateur, sinon auto
 
         #CONFIGURATION DU LOGGER
         self.logger = logging.getLogger(__name__)
         class AppFilter(logging.Filter):
             def filter(selff, record):
-                record.addr = f'{self.ADDR}:{self.PORT_SERVEUR}'
+                record.addr = f'{self.IP}:{self.PORT_SERVEUR}'
                 return True
         self.logger.addFilter(AppFilter())
         syslog = logging.StreamHandler()
@@ -36,7 +37,7 @@ class Noeud():
 
         self.sock_serveur = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket serveur
         try:
-            self.sock_serveur.bind((self.ADDR, self.PORT_SERVEUR)) #association de ladresse et du socket. pour port=0, attribution automatique, on le recupere avec sock.getsockname()[1]
+            self.sock_serveur.bind((self.IP, self.PORT_SERVEUR)) #association de ladresse et du socket. pour port=0, attribution automatique, on le recupere avec sock.getsockname()[1]
             self.PORT_SERVEUR = self.sock_serveur.getsockname()[1]
             self.logger.info('Socket serveur configure')
         except socket.error as msg:
@@ -49,27 +50,25 @@ class Noeud():
             self.logger.info("Connexion au reseau")
 
             #recuperer les addr des noeuds du reseau
-            noeuds = self.message(ADDR_INI, PORT_INI, "noeuds")
-            if noeuds != "":
-                self.logger.info(f"MESSAGE NOEUDS REP : {eval(noeuds)}     TYPE : {type(eval(noeuds))}")
-                for n in eval(noeuds):
-                    self.noeuds.add((n[0],n[1]))
+            noeuds = self.message(IP_INI, PORT_INI, "noeuds")
+            for addr in noeuds:
+                ip = addr[0]
+                port = addr[1]
+                self.noeuds.add((ip,port))
+            self.logger.info(f"Adrr noeuds recup : nombre = {len(self.noeuds)}")
 
             #notifier les noeuds que je suis nouveau et qu ils doivent m enregistrer
-            self.noeuds.add((ADDR_INI, PORT_INI)) #on ajoute notre pair dinitialisation 
+            self.noeuds.add((IP_INI, PORT_INI)) #on ajoute notre pair dinitialisation 
             for pair in self.noeuds:
-                self.message(pair[0], pair[1], "nouveau")
+                self.message(pair[0], pair[1], "nouveau", (self.IP, self.PORT_SERVEUR))
                 ...#traiter les erreurs types echec de co
+            self.logger.info(f"Noeuds avertis")
             
             #recuperer la chaine en cours
-            reponse = self.message(ADDR_INI, PORT_INI, "chaine")
-            chaine = eval(reponse)
-            self.logger.info(f"\nMESSAGE CHAINE REP : {chaine}     TYPE : {type(chaine)}\n")
+            chaine = self.message(IP_INI, PORT_INI, "chaine")
+            self.logger.info(f"Chaine recuperee : taille = {len(chaine)}")
             if self.test_chaine(chaine):
                 self.chaine = chaine
-                print("\n\n")
-                print(f"CHAINE ACTULLE : {self.chaine}, TYPE : {type(self.chaine)}")
-                print("\n\n")
             else:
                 self.logger.error("Chaine recuperee non valide")
 
@@ -92,34 +91,59 @@ class Noeud():
 
         self.logger.info("En cours dexecution")
 
-    def message(self, ADDR_DIST, PORT_DIST, MESSAGE): #co du client a un serveur
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket client
-        sock.bind((self.ADDR, 0)) #attribution du port automatique
-        sock.connect((ADDR_DIST, PORT_DIST))
-        data = MESSAGE.encode()
-        sock.sendall(data)
-        data = sock.recv(1024)
-        ... #changer pour la data qui depasse
-        sock.close()
-        return data.decode()
+    @staticmethod
+    def recvall(sock):
+        BUFF_SIZE = 1024 # 1 KiB
+        data = b''
+        while True:
+            part = sock.recv(BUFF_SIZE)
+            data += part
+            if len(part) < BUFF_SIZE: #soit 0 soit fin de la data
+                break
+        return data
 
-    def traiter_co(self, conn, addr):
+    def message(self, IP_DIST, PORT_DIST, ID_MESSAGE, CORPS = ""): #co du client a un serveur
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket client
+        sock.bind((self.IP, 0)) #attribution du port automatique
+        sock.connect((IP_DIST, PORT_DIST))
+        o = {"id": ID_MESSAGE, "corps" : CORPS}
+        data = json.dumps(o).encode()
+        sock.sendall(data)
+        data = self.recvall(sock)
+        sock.close()
+        data_decodee = data.decode()
+        if data_decodee != "":
+            donnees = eval(data.decode())
+            return donnees["corps"]
+        else :
+            return None
+
+    def traiter_message(self, conn, addr):
         with conn:
-            data = conn.recv(1024)
-            code = data.decode()
-            self.logger.info(f'Demande de connexion : {addr[0]}:{addr[1]}. Code : {code}')
-            match code:
+            data = self.recvall(conn)
+            donnees = eval(data.decode())
+            id = donnees["id"]
+            self.logger.info(f'Message entrant : {addr[0]}:{addr[1]}. Code : {id}')
+            match id:
                 case "chaine":
-                    data = json.dumps(self.chaine).encode()
+                    o = {"id": "chaineR", "corps" : self.chaine}
+                    data = json.dumps(o).encode()
                     conn.sendall(data)
                 case "noeuds":
-                    data = json.dumps(list(self.noeuds)).encode()
+                    o = {"id": "noeudsR", "corps" : list(self.noeuds)}
+                    data = json.dumps(o).encode()
                     conn.sendall(data)
                 case "nouveau":
+                    corps = donnees["corps"]
+                    addr = (corps[0], corps[1])
                     self.noeuds.add(addr)
-                    data = json.dumps("ok").encode()
+                    o = {"id": "nouveauR", "corps" : "ok"}
+                    data = json.dumps(o).encode()
                     conn.sendall(data)
                 case "nouveau-bloc":
+                    ...# traitement du nv bloc
+                    o = {"id": "nouveau-blocR", "corps" : "ok2"}
+                    
                     ...
 
     def ecouter(self):
@@ -127,7 +151,7 @@ class Noeud():
         self.sock_serveur.listen()
         while self.actif:
             conn, addr = self.sock_serveur.accept() # bloquant # the server does not sendall()/recv() on the socket it is listening on but on the new socket returned by accept().
-            fil = threading.Thread(target=self.traiter_co, args=(conn, addr))
+            fil = threading.Thread(target=self.traiter_message, args=(conn, addr))
             fil.start()
             fils.append(fils)
         for fil in fils:
@@ -157,11 +181,11 @@ class Noeud():
     def miner(self):
         while self.actif:
             nv_bloc = self.nouveau_bloc(random())
-            if self.hacher(nv_bloc)[:5] == "00000":
+            if self.hacher(nv_bloc)[:self.difficulte] == "0"*self.difficulte:
                 self.logger.info("Nouveau bloc")
                 self.chaine.append(nv_bloc)
                 for pair in self.noeuds:
-                    self.message(pair[0], pair[1], str(nv_bloc))
+                    reponse = self.message(pair[0], pair[1], "nouveau-bloc", nv_bloc)
 
 
     

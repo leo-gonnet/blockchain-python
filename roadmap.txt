@@ -23,3 +23,6 @@ faire un systeme de reboot du noeud si erreur pour qu il se reconnecte au reseau
 
 
 Poruquoi est ce que les noeuds accepteraient de m enregistrer
+
+
+revoir recvall : ajout d un arg avec la taille de la data a transmettre
